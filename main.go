@@ -2,11 +2,10 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"math/big"
-	"net/http"
 	"os"
-	"strings"
 
 	"github.com/everFinance/goar"
 	"github.com/everFinance/goar/types"
@@ -20,6 +19,7 @@ func main() {
 	if len(os.Args) == 1 {
 		log.Fatal("missing file argument")
 	}
+
 	opt := &Options{
 		Gateway:    "https://arweave.net",
 		WalletFile: os.Getenv("AR_WALLET"),
@@ -27,10 +27,12 @@ func main() {
 	if opt.WalletFile == "" {
 		log.Fatal("AR_WALLET must be defined in your env")
 	}
+
 	data, err := os.ReadFile(os.Args[1])
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	w, err := goar.NewWalletFromPath(opt.WalletFile, opt.Gateway)
 	if err != nil {
 		log.Fatal(err)
@@ -40,6 +42,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	fmt.Printf("this will cost %sAR\n", convertWinstonToAr(big.NewInt(reward)))
 	if !confirm() {
 		log.Fatal("user aborted")
@@ -57,52 +60,35 @@ func sendDataStream(w *goar.Wallet, opt *Options) error {
 	if err != nil {
 		return fmt.Errorf("unable to detect content type: %w", err)
 	}
-	data, err := os.Open(opt.Filename)
+
+	f, err := os.Open(opt.Filename)
 	if err != nil {
 		return err
 	}
-	defer data.Close()
+	defer f.Close()
+
 	tags := []types.Tag{
 		{Name: "Content-Type", Value: contentType},
 		{Name: "Title", Value: opt.Title},
 		{Name: "Description", Value: opt.Description},
 		{Name: "Author", Value: opt.Author},
 	}
-	tx, err := w.SendDataStreamSpeedUp(data, tags, 10)
-	fmt.Println(tx, err)
 
-	return err
-}
-
-func detectContentType(filename string) (string, error) {
-	file, err := os.Open(filename)
+	data, err := io.ReadAll(f)
 	if err != nil {
-		return "", err
+		return err
 	}
-	defer file.Close()
-	// read first 512 bytes
-	buf := make([]byte, 512)
-	_, err = file.Read(buf)
+
+	tx, err := assemblyDataTx(data, w, tags)
 	if err != nil {
-		return "", err
+		return err
 	}
-	contentType := http.DetectContentType(buf)
-	return contentType, err
-}
+	fmt.Println("tx id: ", tx.ID)
 
-func convertWinstonToAr(winston *big.Int) string {
-	// Define the conversion factor: 1 AR = 10^12 Winston
-	conversionFactor := new(big.Float).SetFloat64(1e12)
-	// Convert winston to big.Float for division
-	winstonFloat := new(big.Float).SetInt(winston)
-	// Divide winston by the conversion factor
-	ar := new(big.Float).Quo(winstonFloat, conversionFactor)
-	return ar.Text('f', 6)
-}
+	uploader, err := goar.CreateUploader(w.Client, tx, nil)
+	if err != nil {
+		return err
+	}
 
-func confirm() bool {
-	input := ""
-	fmt.Println("Do you confirm? (type 'yes' to confirm)")
-	fmt.Scanln(&input)
-	return strings.ToLower(input) == "yes"
+	return uploader.Once()
 }
