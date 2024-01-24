@@ -3,26 +3,8 @@ package main
 import (
 	"fmt"
 	"math/big"
-	"net/http"
-	"os"
 	"strings"
 )
-
-func detectContentType(filename string) (string, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-	// read first 512 bytes
-	buf := make([]byte, 512)
-	_, err = file.Read(buf)
-	if err != nil {
-		return "", err
-	}
-	contentType := http.DetectContentType(buf)
-	return contentType, err
-}
 
 func convertWinstonToAr(winston *big.Int) string {
 	// Define the conversion factor: 1 AR = 10^12 Winston

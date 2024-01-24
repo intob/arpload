@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -12,23 +14,46 @@ import (
 )
 
 type Options struct {
-	Gateway, WalletFile, Filename, Title, Description, Author string
+	Gateway,
+	WalletFile,
+	Filename,
+	ContentType,
+	Title,
+	Description,
+	Author string
 }
 
 func main() {
-	if len(os.Args) == 1 {
-		log.Fatal("missing file argument")
+	var typ, title, desc, authr string
+	flag.StringVar(&typ, "type", "", "set the value of content-type http header")
+	flag.StringVar(&title, "title", "", "set the value of title http header")
+	flag.StringVar(&desc, "desc", "", "set the value of description http header")
+	flag.StringVar(&authr, "author", "", "set the value of author http header")
+
+	flag.Parse()
+
+	if len(flag.Args()) < 1 {
+		log.Fatal("missing filename argument")
 	}
+	fname := flag.Arg(0)
 
 	opt := &Options{
-		Gateway:    "https://arweave.net",
-		WalletFile: os.Getenv("AR_WALLET"),
+		Gateway:     "https://arweave.net",
+		WalletFile:  os.Getenv("AR_WALLET"),
+		Filename:    fname,
+		ContentType: typ,
+		Title:       title,
+		Description: desc,
+		Author:      authr,
 	}
 	if opt.WalletFile == "" {
 		log.Fatal("AR_WALLET must be defined in your env")
 	}
+	if opt.ContentType == "" {
+		fmt.Println("warning: Content-Type header will be blank, use -type to set it")
+	}
 
-	data, err := os.ReadFile(os.Args[1])
+	data, err := os.ReadFile(fname)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -57,11 +82,6 @@ func main() {
 }
 
 func sendDataStream(w *goar.Wallet, opt *Options) error {
-	contentType, err := detectContentType(opt.Filename)
-	if err != nil {
-		return fmt.Errorf("unable to detect content type: %w", err)
-	}
-
 	f, err := os.Open(opt.Filename)
 	if err != nil {
 		return err
@@ -74,7 +94,7 @@ func sendDataStream(w *goar.Wallet, opt *Options) error {
 	}
 
 	tags := []types.Tag{
-		{Name: "Content-Type", Value: contentType},
+		{Name: "Content-Type", Value: opt.ContentType},
 		{Name: "Title", Value: opt.Title},
 		{Name: "Description", Value: opt.Description},
 		{Name: "Author", Value: opt.Author},
@@ -85,6 +105,10 @@ func sendDataStream(w *goar.Wallet, opt *Options) error {
 		return err
 	}
 	fmt.Println("tx id: ", tx.ID)
+	fmt.Printf("will upload file with tags: %+v\n", tags)
+	if !confirm() {
+		return errors.New("user aborted")
+	}
 
 	uploader, err := goar.CreateUploader(w.Client, tx, nil)
 	if err != nil {
@@ -95,7 +119,7 @@ func sendDataStream(w *goar.Wallet, opt *Options) error {
 		if err := uploader.UploadChunk(); err != nil {
 			return fmt.Errorf("upload chunk failed: %w", err)
 		}
-		fmt.Printf("%.2f%% complete", uploader.PctComplete())
+		fmt.Printf("%.2f%% ", uploader.PctComplete())
 	}
 	return nil
 }
