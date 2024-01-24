@@ -68,16 +68,16 @@ func sendDataStream(w *goar.Wallet, opt *Options) error {
 	}
 	defer f.Close()
 
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return err
+	}
+
 	tags := []types.Tag{
 		{Name: "Content-Type", Value: contentType},
 		{Name: "Title", Value: opt.Title},
 		{Name: "Description", Value: opt.Description},
 		{Name: "Author", Value: opt.Author},
-	}
-
-	data, err := io.ReadAll(f)
-	if err != nil {
-		return err
 	}
 
 	tx, err := assemblyDataTx(data, w, tags)
