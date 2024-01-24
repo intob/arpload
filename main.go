@@ -53,6 +53,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	fmt.Println("🌳 done")
 }
 
 func sendDataStream(w *goar.Wallet, opt *Options) error {
@@ -90,5 +91,11 @@ func sendDataStream(w *goar.Wallet, opt *Options) error {
 		return err
 	}
 
-	return uploader.Once()
+	for !uploader.IsComplete() {
+		if err := uploader.UploadChunk(); err != nil {
+			return fmt.Errorf("upload chunk failed: %w", err)
+		}
+		fmt.Printf("%.2f%% complete", uploader.PctComplete())
+	}
+	return nil
 }
