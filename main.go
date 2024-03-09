@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -13,10 +14,10 @@ import (
 	"github.com/everFinance/goar/types"
 )
 
-type Options struct {
+type Job struct {
 	Gateway,
 	WalletFile,
-	Filename,
+	Fname,
 	ContentType,
 	Title,
 	Description,
@@ -37,19 +38,19 @@ func main() {
 	}
 	fname := flag.Arg(0)
 
-	opt := &Options{
+	job := &Job{
 		Gateway:     "https://arweave.net",
 		WalletFile:  os.Getenv("AR_WALLET"),
-		Filename:    fname,
+		Fname:       fname,
 		ContentType: typ,
 		Title:       title,
 		Description: desc,
 		Author:      authr,
 	}
-	if opt.WalletFile == "" {
+	if job.WalletFile == "" {
 		log.Fatal("AR_WALLET must be defined in your env")
 	}
-	if opt.ContentType == "" {
+	if job.ContentType == "" {
 		fmt.Println("warning: Content-Type header will be blank, use -type to set it")
 	}
 
@@ -58,7 +59,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	w, err := goar.NewWalletFromPath(opt.WalletFile, opt.Gateway)
+	w, err := goar.NewWalletFromPath(job.WalletFile, job.Gateway)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -74,52 +75,116 @@ func main() {
 	}
 
 	fmt.Println("uploading...")
-	err = sendDataStream(w, opt)
+	txId, err := job.sendDataStream(w)
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("🌳 done")
+	fmt.Println("🌳 done:", txId)
 }
 
-func sendDataStream(w *goar.Wallet, opt *Options) error {
-	f, err := os.Open(opt.Filename)
+func (j *Job) sendDataStream(w *goar.Wallet) (string, error) {
+	f, err := os.Open(j.Fname)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer f.Close()
 
 	data, err := io.ReadAll(f)
 	if err != nil {
-		return err
+		return "", err
 	}
 
+	// resume or create new uploader
+	uploader, err := j.readUploader(w, data)
+	if uploader == nil && err == nil {
+		// create new one
+		uploader, err = j.createUploader(w, data)
+		if err != nil {
+			return "", fmt.Errorf("err starting new upload: %w", err)
+		}
+		fmt.Println("starting new upload:", uploader.Transaction.ID)
+	} else {
+		fmt.Printf("resuming upload at chunk %d: %s\n", uploader.ChunkIndex, uploader.Transaction.ID)
+	}
+
+	jsonFname := uploaderJsonFname(j.Fname)
+
+	for !uploader.IsComplete() {
+		err := uploader.UploadChunk()
+		if err != nil {
+			return uploader.Transaction.ID, fmt.Errorf("upload chunk failed: %w", err)
+		}
+		uploaderJson, err := json.Marshal(uploader)
+		if err != nil {
+			return uploader.Transaction.ID, err
+		}
+
+		err = os.WriteFile(jsonFname, uploaderJson, 0777)
+		if err != nil {
+			return uploader.Transaction.ID, fmt.Errorf("err writing uploader json file (%s): %w", jsonFname, err)
+		}
+		fmt.Printf("%.2f%% ", uploader.PctComplete())
+	}
+
+	// remove uploader json
+	err = os.Remove(jsonFname)
+	if err != nil {
+		return "", fmt.Errorf("err removing uploader json: %w", err)
+	}
+
+	return uploader.Transaction.ID, nil
+}
+
+func (j *Job) readUploader(w *goar.Wallet, data []byte) (*goar.TransactionUploader, error) {
+	uploaderBuf, err := os.ReadFile(uploaderJsonFname(j.Fname))
+	if err != nil {
+		return nil, nil
+	}
+	lastUploader := &goar.TransactionUploader{}
+	err = json.Unmarshal(uploaderBuf, lastUploader)
+	if err != nil {
+		return nil, fmt.Errorf("err unmarshaling uploader: %w", err)
+	}
+
+	newUploader, err := goar.CreateUploader(w.Client, lastUploader.FormatSerializedUploader(), data)
+	if err != nil {
+		return nil, fmt.Errorf("err creating uploader: %w", err)
+	}
+
+	err = newUploader.Once()
+	if err != nil {
+		return nil, fmt.Errorf("err calling uploader's Once(): %w", err)
+	}
+
+	return newUploader, nil
+}
+
+func (j *Job) createUploader(w *goar.Wallet, data []byte) (*goar.TransactionUploader, error) {
 	tags := []types.Tag{
-		{Name: "Content-Type", Value: opt.ContentType},
-		{Name: "Title", Value: opt.Title},
-		{Name: "Description", Value: opt.Description},
-		{Name: "Author", Value: opt.Author},
+		{Name: "Content-Type", Value: j.ContentType},
+		{Name: "Title", Value: j.Title},
+		{Name: "Description", Value: j.Description},
+		{Name: "Author", Value: j.Author},
 	}
 
 	tx, err := assemblyDataTx(data, w, tags)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	fmt.Println("tx id: ", tx.ID)
 	fmt.Printf("will upload file with tags: %+v\n", tags)
 	if !confirm() {
-		return errors.New("user aborted")
+		return nil, errors.New("user aborted")
 	}
 
 	uploader, err := goar.CreateUploader(w.Client, tx, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	for !uploader.IsComplete() {
-		if err := uploader.UploadChunk(); err != nil {
-			return fmt.Errorf("upload chunk failed: %w", err)
-		}
-		fmt.Printf("%.2f%% ", uploader.PctComplete())
-	}
-	return nil
+	return uploader, nil
+}
+
+func uploaderJsonFname(fname string) string {
+	return fmt.Sprintf("%s.uploader.json", fname)
 }
