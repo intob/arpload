@@ -79,7 +79,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("🌳 done:", txId)
+	fmt.Printf("\n🌳 Done. Tx:%s\n", txId)
 }
 
 func (j *Job) sendDataStream(w *goar.Wallet) (string, error) {
@@ -123,7 +123,7 @@ func (j *Job) sendDataStream(w *goar.Wallet) (string, error) {
 		if err != nil {
 			return uploader.Transaction.ID, fmt.Errorf("err writing uploader json file (%s): %w", jsonFname, err)
 		}
-		fmt.Printf("%.2f%% ", uploader.PctComplete())
+		fmt.Printf("\r%.2f%%\033[0K", uploader.PctComplete())
 	}
 
 	// remove uploader json
