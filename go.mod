@@ -2,6 +2,8 @@ module github.com/intob/arpload
 
 go 1.21.6
 
+require github.com/everFinance/goar v1.5.7
+
 require (
 	github.com/btcsuite/btcd/btcec/v2 v2.3.2 // indirect
 	github.com/btcsuite/btcd/btcutil v1.1.3 // indirect
@@ -9,7 +11,6 @@ require (
 	github.com/ethereum/go-ethereum v1.10.20 // indirect
 	github.com/everFinance/arseeding v1.0.3 // indirect
 	github.com/everFinance/ethrpc v1.0.4 // indirect
-	github.com/everFinance/goar v1.5.7 // indirect
 	github.com/everFinance/goether v1.1.9 // indirect
 	github.com/everFinance/gojwk v1.0.0 // indirect
 	github.com/everFinance/ttcrsa v1.1.3 // indirect
@@ -23,6 +24,7 @@ require (
 	github.com/mattn/go-isatty v0.0.14 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.1 // indirect
+	github.com/nbio/st v0.0.0-20140626010706-e9e8d9816f32 // indirect
 	github.com/panjf2000/ants/v2 v2.6.0 // indirect
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/tidwall/gjson v1.14.1 // indirect
